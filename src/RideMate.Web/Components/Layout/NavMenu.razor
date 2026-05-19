@@ -1,0 +1,38 @@
+﻿<div class="brand-shell">
+    <a class="brand-mark" href="/map" aria-label="RideMate map">
+        <span class="brand-dot"></span>
+        <span>
+            <strong>RideMate</strong>
+            <small>Live circles</small>
+        </span>
+    </a>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler')?.click()">
+    <nav class="nav flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/map">
+                <span class="nav-icon map-icon" aria-hidden="true"></span>
+                <span>Circle Map</span>
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/login">
+                <span class="nav-icon login-icon" aria-hidden="true"></span>
+                <span>Login</span>
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <form method="post" action="/auth/logout" class="m-0">
+                <button type="submit" class="nav-link nav-button">
+                    <span class="nav-icon logout-icon" aria-hidden="true"></span>
+                    <span>Logout</span>
+                </button>
+            </form>
+        </div>
+    </nav>
+</div>

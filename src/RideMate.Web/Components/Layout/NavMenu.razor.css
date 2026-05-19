@@ -1,0 +1,218 @@
+.brand-shell {
+    padding: 1rem .9rem .75rem;
+}
+
+.brand-mark {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+    min-height: 4rem;
+    padding: .75rem .85rem;
+    overflow: hidden;
+    color: #0f172a;
+    text-decoration: none;
+    border: 1px solid rgba(255, 255, 255, .65);
+    border-radius: 24px;
+    background: rgba(255, 255, 255, .78);
+    box-shadow: 0 18px 42px rgba(15, 23, 42, .15);
+    backdrop-filter: blur(16px);
+}
+
+.brand-mark::before {
+    content: "";
+    position: absolute;
+    inset: auto -20% -85% -20%;
+    height: 120%;
+    border-radius: 48%;
+    background: linear-gradient(90deg, rgba(37, 99, 235, .18), rgba(20, 184, 166, .22), rgba(244, 114, 182, .16));
+    transition: transform .48s ease;
+}
+
+.brand-mark:hover::before {
+    transform: translateY(-42%);
+}
+
+.brand-dot {
+    position: relative;
+    z-index: 1;
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: 999px;
+    background:
+        radial-gradient(circle at 35% 32%, #ffffff 0 16%, transparent 17%),
+        linear-gradient(135deg, #2563eb, #14b8a6);
+    box-shadow: 0 12px 24px rgba(37, 99, 235, .28);
+}
+
+.brand-mark strong,
+.brand-mark small {
+    position: relative;
+    z-index: 1;
+    display: block;
+}
+
+.brand-mark strong {
+    font-size: 1.1rem;
+    line-height: 1.05;
+    font-weight: 950;
+}
+
+.brand-mark small {
+    margin-top: .15rem;
+    color: #64748b;
+    font-size: .74rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.navbar-toggler {
+    appearance: none;
+    cursor: pointer;
+    width: 3.1rem;
+    height: 2.55rem;
+    position: absolute;
+    top: 1.15rem;
+    right: 1rem;
+    border: 1px solid rgba(255, 255, 255, .66);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .78);
+    box-shadow: 0 12px 26px rgba(15, 23, 42, .16);
+}
+
+.navbar-toggler::before {
+    content: "";
+    position: absolute;
+    left: .82rem;
+    top: .72rem;
+    width: 1.35rem;
+    height: .95rem;
+    border-top: 2px solid #0f172a;
+    border-bottom: 2px solid #0f172a;
+}
+
+.navbar-toggler::after {
+    content: "";
+    position: absolute;
+    left: .82rem;
+    top: 1.22rem;
+    width: 1.35rem;
+    border-top: 2px solid #0f172a;
+}
+
+.nav-scrollable {
+    display: none;
+    padding-bottom: 1rem;
+}
+
+.navbar-toggler:checked ~ .nav-scrollable {
+    display: block;
+}
+
+.nav {
+    gap: .45rem;
+}
+
+.nav-item {
+    font-size: .92rem;
+}
+
+.nav-item ::deep .nav-link,
+.nav-button {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    width: 100%;
+    min-height: 3.35rem;
+    overflow: hidden;
+    color: #334155;
+    text-decoration: none;
+    text-align: left;
+    border: 1px solid transparent;
+    border-radius: 18px;
+    background: transparent;
+    font-weight: 900;
+    line-height: 1;
+    transition: transform .18s ease, color .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.nav-item ::deep .nav-link::before,
+.nav-button::before {
+    content: "";
+    position: absolute;
+    inset: auto -18% -92% -18%;
+    height: 110%;
+    border-radius: 46%;
+    background: linear-gradient(90deg, rgba(37, 99, 235, .18), rgba(20, 184, 166, .2));
+    transition: transform .38s ease;
+}
+
+.nav-item ::deep .nav-link:hover,
+.nav-button:hover {
+    color: #0f172a;
+    border-color: rgba(255, 255, 255, .62);
+    background: rgba(255, 255, 255, .7);
+    box-shadow: 0 16px 32px rgba(15, 23, 42, .12);
+    transform: translateY(-2px);
+}
+
+.nav-item ::deep .nav-link:hover::before,
+.nav-button:hover::before {
+    transform: translateY(-55%);
+}
+
+.nav-item ::deep a.active {
+    color: #0f172a;
+    border-color: rgba(37, 99, 235, .24);
+    background: rgba(255, 255, 255, .82);
+    box-shadow: 0 16px 34px rgba(37, 99, 235, .15);
+}
+
+.nav-icon {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, .08);
+}
+
+.nav-icon::before {
+    color: #0f172a;
+    font-size: .95rem;
+    font-weight: 950;
+}
+
+.map-icon::before {
+    content: "M";
+}
+
+.login-icon::before {
+    content: "L";
+}
+
+.logout-icon::before {
+    content: "X";
+}
+
+.nav-item ::deep .nav-link span,
+.nav-button span {
+    position: relative;
+    z-index: 1;
+}
+
+@media (min-width: 641px) {
+    .navbar-toggler {
+        display: none;
+    }
+
+    .nav-scrollable {
+        display: block;
+        height: calc(100vh - 5.75rem);
+        overflow-y: auto;
+    }
+}

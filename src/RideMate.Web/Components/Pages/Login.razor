@@ -1,0 +1,71 @@
+@page "/login"
+
+<div class="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+    <div class="w-full max-w-md bg-white rounded-3xl shadow-xl p-10">
+        <h2 class="text-3xl font-black text-slate-800 mb-6">Welcome Back</h2>
+
+        @if (Registered == true)
+        {
+            <p class="mb-4 text-sm font-semibold text-emerald-600">
+                Account created. Check your email to verify it before signing in.
+            </p>
+        }
+
+        @if (EmailConfirmed == true)
+        {
+            <p class="mb-4 text-sm font-semibold text-emerald-600">
+                Email confirmed. Sign in to continue.
+            </p>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(Error))
+        {
+            <p class="mb-4 text-sm font-semibold text-red-600">
+                @ErrorMessage
+            </p>
+        }
+
+        <form method="post" action="/auth/login" class="space-y-4">
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+
+            <input name="email" type="email" placeholder="Email"
+                   autocomplete="email" required
+                   class="w-full p-4 bg-slate-100 rounded-2xl outline-none" />
+
+            <input name="password" type="password" placeholder="Password"
+                   autocomplete="current-password" required
+                   class="w-full p-4 bg-slate-100 rounded-2xl outline-none" />
+
+            <button type="submit"
+                    class="w-full bg-blue-600 text-white p-4 rounded-2xl font-bold">
+                Sign In
+            </button>
+        </form>
+
+        <p class="mt-6 text-center text-slate-500">
+            New here?
+            <a href="/register" class="text-blue-600 font-bold">Create account</a>
+        </p>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")]
+    public string? Error { get; set; }
+
+    [SupplyParameterFromQuery(Name = "registered")]
+    public bool? Registered { get; set; }
+
+    [SupplyParameterFromQuery(Name = "emailConfirmed")]
+    public bool? EmailConfirmed { get; set; }
+
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    private string ErrorMessage => Error switch
+    {
+        "email-not-confirmed" => "Please confirm your email before signing in.",
+        "invalid-confirmation" => "That email confirmation link is invalid or expired.",
+        _ => "Invalid email or password."
+    };
+}

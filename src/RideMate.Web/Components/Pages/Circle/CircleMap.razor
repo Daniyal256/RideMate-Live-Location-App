@@ -1,0 +1,1485 @@
+@page "/map"
+@page "/map/{CircleId}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+
+@using Microsoft.AspNetCore.SignalR.Client
+@using Microsoft.AspNetCore.SignalR
+@using Microsoft.EntityFrameworkCore
+@using RideMate.Application.Services
+@using RideMate.Domain.Entities
+
+@inject AppDbContext Db
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IWebHostEnvironment Env
+@inject IHubContext<LocationHub> HubContext
+
+@implements IAsyncDisposable
+
+<style>
+    .ride-map-shell {
+        position: relative;
+        height: calc(100vh - 76px);
+        min-height: 640px;
+        overflow: hidden;
+        background: #dbeafe;
+    }
+
+    #map {
+        position: absolute;
+        inset: 0;
+        height: 100%;
+        width: 100%;
+        z-index: 0;
+    }
+
+    .ride-panel {
+        position: absolute;
+        top: 18px;
+        bottom: 18px;
+        left: 18px;
+        z-index: 500;
+        width: min(410px, calc(100vw - 36px));
+        padding: 18px;
+        overflow-y: auto;
+        border: 1px solid rgba(255, 255, 255, .72);
+        border-radius: 28px;
+        background: rgba(255, 255, 255, .88);
+        box-shadow: 0 28px 80px rgba(15, 23, 42, .24);
+        backdrop-filter: blur(18px);
+        pointer-events: none;
+        transform: translateX(-120%);
+        transition: transform .28s ease, box-shadow .28s ease, background .28s ease;
+    }
+
+    .ride-map-shell.panel-open .ride-panel {
+        pointer-events: auto;
+        transform: translateX(0);
+        background: rgba(255, 255, 255, .94);
+        box-shadow: 0 34px 90px rgba(15, 23, 42, .28);
+    }
+
+    .panel-grip {
+        position: sticky;
+        top: 0;
+        float: right;
+        display: grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        margin: -4px -4px 0 8px;
+        border: 0;
+        border-radius: 999px;
+        color: #0f172a;
+        background: #eef2ff;
+        box-shadow: 0 10px 24px rgba(37, 99, 235, .16);
+        transition: transform .18s ease, background .18s ease;
+    }
+
+    .panel-reopen {
+        position: absolute;
+        top: 28px;
+        left: 14px;
+        z-index: 520;
+        display: grid;
+        place-items: center;
+        width: 46px;
+        height: 46px;
+        border: 1px solid rgba(255, 255, 255, .72);
+        border-radius: 999px;
+        color: #0f172a;
+        background: rgba(255, 255, 255, .92);
+        box-shadow: 0 18px 42px rgba(15, 23, 42, .2);
+        backdrop-filter: blur(14px);
+        transition: transform .18s ease, box-shadow .18s ease;
+    }
+
+    .panel-reopen:hover {
+        transform: translateY(-2px) scale(1.04);
+        box-shadow: 0 24px 52px rgba(15, 23, 42, .25);
+    }
+
+    .panel-grip:hover {
+        transform: translateY(-1px) scale(1.04);
+        background: #dbeafe;
+    }
+
+    .glass-button,
+    .dark-button,
+    .danger-button {
+        border: 0;
+        border-radius: 16px;
+        padding: 12px 14px;
+        font-weight: 900;
+        transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+    }
+
+    .glass-button {
+        color: #0f172a;
+        background: rgba(248, 250, 252, .9);
+        box-shadow: inset 0 0 0 1px rgba(148, 163, 184, .22), 0 10px 22px rgba(15, 23, 42, .08);
+    }
+
+    .dark-button {
+        color: white;
+        background: #0f172a;
+        box-shadow: 0 14px 32px rgba(15, 23, 42, .22);
+    }
+
+    .danger-button {
+        color: white;
+        background: #dc2626;
+        box-shadow: 0 14px 32px rgba(220, 38, 38, .24);
+    }
+
+    .glass-button:hover,
+    .dark-button:hover,
+    .danger-button:hover {
+        transform: translateY(-2px);
+    }
+
+    .circle-row,
+    .member-card {
+        width: 100%;
+        border: 1px solid rgba(226, 232, 240, .88);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, .84);
+        box-shadow: 0 12px 28px rgba(15, 23, 42, .08);
+        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease, opacity .18s ease, filter .18s ease;
+    }
+
+    .circle-row:hover,
+    .member-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 18px 40px rgba(15, 23, 42, .13);
+        border-color: rgba(37, 99, 235, .28);
+    }
+
+    .circle-row.active {
+        border-color: rgba(37, 99, 235, .48);
+        background: linear-gradient(135deg, rgba(239, 246, 255, .96), rgba(255, 255, 255, .9));
+    }
+
+    .member-card.offline {
+        opacity: .58;
+        filter: grayscale(1);
+        background: rgba(241, 245, 249, .92);
+    }
+
+    button.member-card {
+        display: block;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .settings-wrap {
+        position: relative;
+    }
+
+    .settings-popover {
+        position: absolute;
+        top: 52px;
+        right: 0;
+        z-index: 800;
+        width: min(340px, calc(100vw - 48px));
+        border: 1px solid rgba(226, 232, 240, .86);
+        border-radius: 24px;
+        background: rgba(255, 255, 255, .96);
+        box-shadow: 0 26px 70px rgba(15, 23, 42, .22);
+        backdrop-filter: blur(18px);
+        padding: 14px;
+    }
+
+    .settings-avatar {
+        height: 66px;
+        width: 66px;
+        border-radius: 999px;
+        object-fit: cover;
+        border: 4px solid white;
+        box-shadow: 0 0 0 3px #2563eb, 0 12px 24px rgba(15, 23, 42, .14);
+    }
+
+    .avatar {
+        height: 54px;
+        width: 54px;
+        border-radius: 999px;
+        object-fit: cover;
+        border: 4px solid white;
+        box-shadow: 0 0 0 3px #2563eb, 0 12px 24px rgba(15, 23, 42, .16);
+    }
+
+    .offline .avatar {
+        box-shadow: 0 0 0 3px #94a3b8, 0 12px 24px rgba(15, 23, 42, .12);
+    }
+
+    .map-fab {
+        position: absolute;
+        z-index: 600;
+        right: 24px;
+        border: 0;
+        color: white;
+        background: rgba(15, 23, 42, .92);
+        box-shadow: 0 18px 38px rgba(15, 23, 42, .22);
+        transition: transform .18s ease, box-shadow .18s ease;
+    }
+
+    .map-fab:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 24px 48px rgba(15, 23, 42, .28);
+    }
+
+    .field {
+        width: 100%;
+        border: 1px solid rgba(203, 213, 225, .76);
+        border-radius: 16px;
+        background: rgba(248, 250, 252, .92);
+        padding: 13px 14px;
+        outline: none;
+        transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+    }
+
+    .field:focus {
+        border-color: rgba(37, 99, 235, .54);
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, .12);
+        background: white;
+    }
+
+    @@media (max-width: 720px) {
+        .ride-map-shell {
+            height: calc(100vh - 60px);
+            min-height: 620px;
+        }
+
+        .ride-panel {
+            top: 12px;
+            bottom: 12px;
+            left: 12px;
+            width: calc(100vw - 24px);
+            transform: translateX(-120%);
+        }
+    }
+</style>
+
+<div class="ride-map-shell @(_panelPinned ? "panel-open" : "")">
+    <div id="map"></div>
+
+    @if (!_panelPinned)
+    {
+        <button type="button" class="panel-reopen" title="Open sidebar" @onclick="TogglePanel">
+            >>
+        </button>
+    }
+
+    <aside class="ride-panel">
+        <button type="button" class="panel-grip" title="Pin sidebar" @onclick="TogglePanel">
+            @(_panelPinned ? "<<" : ">>")
+        </button>
+
+        @if (_sidebarMode == SidebarMode.Create)
+        {
+            <p class="mb-1 text-xs font-black uppercase tracking-wide text-slate-400">New circle</p>
+            <h1 class="mb-4 text-3xl font-black text-slate-950">Create circle</h1>
+
+            <label class="mb-3 block text-sm font-bold text-slate-500">Circle name</label>
+            <input class="field mb-3" @bind="_newCircleName" placeholder="Family, Friends, Team..." />
+
+            <div class="mb-3 flex gap-2">
+                <input class="field font-black uppercase tracking-wide" value="@_generatedInviteCode" readonly placeholder="Invite code" />
+                <button type="button" class="glass-button" @onclick="GenerateCreateCodeAsync">Generate</button>
+            </div>
+
+            <button type="button" class="dark-button mb-3 w-full" @onclick="CreateCircleFromPanelAsync">
+                Create Circle
+            </button>
+            <button type="button" class="glass-button w-full" @onclick="ShowDetailsPanel">
+                Back to details
+            </button>
+        }
+        else
+        {
+            <div class="mb-4 flex items-start justify-between gap-3">
+                <div>
+                    <p class="mb-1 text-xs font-black uppercase tracking-wide text-slate-400">RideMate Circle</p>
+                    <h1 class="m-0 text-3xl font-black text-slate-950">@(_activeCircle?.Name ?? "Live Map")</h1>
+                </div>
+                <div class="settings-wrap">
+                    <button type="button" class="glass-button" title="Settings" @onclick="ToggleSettings">
+                        Settings
+                    </button>
+
+                    @if (_settingsOpen)
+                    {
+                        <div class="settings-popover">
+                            <div class="mb-3 flex items-center gap-3">
+                                <img class="settings-avatar" src="@AvatarUrl" alt="@DisplayName" />
+                                <div class="min-w-0">
+                                    <div class="truncate text-base font-black text-slate-950">@DisplayName</div>
+                                    <div class="text-xs font-bold text-slate-500">@(_currentUser?.Email ?? "Profile")</div>
+                                </div>
+                            </div>
+
+                            <label class="mb-2 block text-xs font-black uppercase text-slate-400">Profile name</label>
+                            <input class="field mb-3" @bind="_profileDisplayName" />
+
+                            <label class="mb-2 block text-xs font-black uppercase text-slate-400">Profile photo</label>
+                            <InputFile class="field mb-2" OnChange="HandleAvatarSelected" accept="image/png,image/jpeg,image/webp,image/gif" />
+
+                            <div class="mb-3 grid grid-cols-2 gap-2">
+                                <button type="button" class="dark-button" @onclick="SaveProfileAsync">Save</button>
+                                <button type="button" class="danger-button" @onclick="DeletePhotoAsync">Delete photo</button>
+                            </div>
+
+                            <div class="mb-2 rounded-2xl bg-slate-50 p-3">
+                                <div class="mb-2 text-xs font-black uppercase text-slate-400">Location</div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button type="button" class="glass-button" @onclick="AllowLocationAsync">Allow location</button>
+                                    <button type="button" class="danger-button" @onclick="PauseLocationAsync">Pause</button>
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(_settingsMessage))
+                            {
+                                <div class="rounded-2xl bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700">@_settingsMessage</div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="mb-4 grid grid-cols-2 gap-2">
+                <button type="button" class="dark-button" @onclick="OpenCreatePanel">+ New</button>
+                <button type="button" class="glass-button" @onclick="ShowAllMarkers">Show All</button>
+            </div>
+
+            <div class="mb-4 flex gap-2">
+                <input class="field flex-1 uppercase" placeholder="Invite code" @bind="_joinCode" />
+                <button type="button" class="dark-button" @onclick="JoinCircleAsync">Join</button>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_message))
+            {
+                <div class="mb-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">
+                    @_message
+                </div>
+            }
+
+            @if (_activeCircle is not null)
+            {
+                <div class="mb-4 rounded-[22px] bg-slate-50/90 p-3 shadow-inner">
+                    <label class="mb-2 block text-xs font-black uppercase text-slate-400">Edit active circle</label>
+                    <div class="mb-2 flex gap-2">
+                        <input class="field flex-1" @bind="_editCircleName" />
+                        <button type="button" class="glass-button" @onclick="RenameActiveCircleAsync">Save</button>
+                    </div>
+                    <button type="button" class="danger-button w-full" @onclick="LeaveActiveCircleAsync">Leave circle</button>
+                </div>
+            }
+
+            @if (_circles.Count == 0)
+            {
+                <div class="mb-4 rounded-2xl border border-dashed border-slate-300 bg-white/70 p-4 text-sm font-bold text-slate-500">
+                    Create a circle or join one with an invite code.
+                </div>
+            }
+            else
+            {
+                <div class="mb-5 flex flex-col gap-2">
+                    @foreach (var circle in _circles)
+                    {
+                        <button type="button" class="circle-row @(circle.Id == _activeCircle?.Id ? "active" : "") p-3 text-left"
+                                @onclick="() => SelectCircleAsync(circle.Id)">
+                            <span class="flex items-center justify-between gap-3">
+                                <span>
+                                    <span class="block font-black text-slate-950">@circle.Name</span>
+                                    <span class="text-sm font-bold text-slate-500">Code @circle.InviteCode</span>
+                                </span>
+                                <span class="rounded-full bg-slate-100 px-3 py-1 text-sm font-black text-slate-700">@circle.MemberCount</span>
+                            </span>
+                        </button>
+                    }
+                </div>
+            }
+
+            <div class="mb-3 flex items-center justify-between">
+                <h2 class="m-0 text-lg font-black text-slate-950">Members</h2>
+                <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-500">@_members.Count</span>
+            </div>
+
+            <div class="flex flex-col gap-3">
+                @foreach (var member in _members)
+                {
+                    <button type="button" class="member-card @(member.IsOffline ? "offline" : "") p-3"
+                            @onclick="() => FocusMemberAsync(member)">
+                        <div class="flex items-center gap-3">
+                            <img class="avatar" src="@member.AvatarUrl" alt="@member.DisplayName" />
+                            <div class="min-w-0 flex-1">
+                                <div class="truncate text-base font-black text-slate-950">@member.DisplayName</div>
+                                <div class="text-sm font-bold text-slate-500">@member.StatusText</div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-sm font-black text-slate-950">@member.BatteryText</div>
+                                <div class="text-xs font-bold text-slate-400">@member.LastSeenText</div>
+                            </div>
+                        </div>
+                    </button>
+                }
+            </div>
+
+            <p class="mt-4 rounded-2xl bg-slate-100/90 p-3 text-sm font-bold text-slate-600">
+                @(_locationStatus ?? "Waiting for location permission...")
+            </p>
+        }
+    </aside>
+
+    <button type="button" class="map-fab rounded-2xl px-4 py-3 font-black" style="bottom: 102px;" @onclick="ShowAllMarkers">
+        Show All
+    </button>
+</div>
+
+@code {
+    [Parameter] public string? CircleId { get; set; }
+
+    private const double DefaultLat = 33.5651;
+    private const double DefaultLng = 73.0169;
+    private static readonly TimeSpan OfflineAfter = TimeSpan.FromMinutes(2);
+
+    private readonly InviteService _inviteService = new();
+
+    private DotNetObjectReference<CircleMap>? _objRef;
+    private HubConnection? _hubConnection;
+    private ApplicationUser? _currentUser;
+    private CircleSummary? _activeCircle;
+    private string? _joinedHubCircleId;
+    private List<CircleSummary> _circles = new();
+    private List<MemberDetail> _members = new();
+
+    private string _newCircleName = "Family";
+    private string _editCircleName = "";
+    private string _profileDisplayName = "";
+    private string _joinCode = "";
+    private string _generatedInviteCode = "";
+    private string? _message;
+    private string? _settingsMessage;
+    private string? _locationStatus;
+    private IBrowserFile? _selectedAvatar;
+    private bool _mapStarted;
+    private bool _panelPinned = true;
+    private bool _fitAfterCircleSwitch;
+    private bool _settingsOpen;
+    private SidebarMode _sidebarMode = SidebarMode.Details;
+    private double? _currentLat;
+    private double? _currentLng;
+    private int? _currentBatteryLevel;
+    private bool _hasCurrentLocation;
+    private bool _currentLocationPermissionDenied;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _currentUser = await UserManager.GetUserAsync(authState.User);
+
+        if (_currentUser is null)
+        {
+            Nav.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+
+        await LoadCirclesAsync();
+
+        _profileDisplayName = DisplayName;
+
+        var requested = ResolveRequestedCircleId();
+        _activeCircle = _circles.FirstOrDefault(c => c.Id == requested) ?? _circles.FirstOrDefault();
+        _editCircleName = _activeCircle?.Name ?? "";
+
+        if (_activeCircle is not null)
+        {
+            await LoadActiveMembersAsync();
+        }
+
+        _generatedInviteCode = await GenerateUniqueInviteCodeAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_mapStarted || _currentUser is null)
+        {
+            return;
+        }
+
+        await Task.Delay(250);
+        await StartMapAndHubAsync();
+    }
+
+    private async Task StartMapAndHubAsync()
+    {
+        if (_mapStarted || _currentUser is null)
+        {
+            return;
+        }
+
+        _mapStarted = true;
+
+        await JS.InvokeVoidAsync("initLeafletMap", "map", DefaultLat, DefaultLng);
+        await Task.Delay(250);
+        await JS.InvokeVoidAsync("invalidateRideMateMap");
+
+        _objRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("startLocationTracking", _objRef);
+
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(Nav.ToAbsoluteUri($"/locationHub?userId={_currentUser.Id}"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hubConnection.On<string, string, string, double, double, DateTime, int?, int>(
+            "ReceiveLocation",
+            async (userId, displayName, avatarUrl, lat, lng, timestamp, batteryLevel, presenceState) =>
+            {
+                var isLocationPermissionDenied = presenceState == 2;
+                var isOffline = presenceState > 0;
+
+                if (_activeCircle is not null && !_members.Any(m => m.UserId == userId))
+                {
+                    var isCurrentMember = await Db.CircleMembers.AnyAsync(cm =>
+                        cm.CircleId == _activeCircle.Id &&
+                        cm.UserId == userId);
+
+                    if (!isCurrentMember)
+                    {
+                        await JS.InvokeVoidAsync("removeRideMateMarker", userId);
+                        return;
+                    }
+                }
+
+                UpsertMember(userId, displayName, avatarUrl, lat, lng, timestamp, batteryLevel, isOffline, isLocationPermissionDenied);
+
+                await JS.InvokeVoidAsync(
+                    "updateUserMarker",
+                    userId,
+                    lat,
+                    lng,
+                    avatarUrl,
+                    displayName,
+                    userId == _currentUser.Id,
+                    isOffline,
+                    isLocationPermissionDenied);
+
+                if (_fitAfterCircleSwitch)
+                {
+                    _fitAfterCircleSwitch = false;
+                    await Task.Delay(100);
+                    await JS.InvokeVoidAsync("fitAllRideMateMarkers");
+                }
+
+                await InvokeAsync(StateHasChanged);
+            });
+
+        _hubConnection.On<string, string>(
+            "MemberLeft",
+            async (userId, circleId) =>
+            {
+                if (_activeCircle?.Id.ToString() != circleId)
+                {
+                    return;
+                }
+
+                _members.RemoveAll(m => m.UserId == userId);
+                await JS.InvokeVoidAsync("removeRideMateMarker", userId);
+                await LoadCirclesAsync();
+                await InvokeAsync(StateHasChanged);
+            });
+
+        try
+        {
+            await _hubConnection.StartAsync();
+
+            if (_activeCircle is not null)
+            {
+                await JoinActiveHubGroupAsync();
+                await RenderMemberMarkersAsync();
+            }
+
+            _message = "Live sharing connected.";
+        }
+        catch (Exception ex)
+        {
+            _message = $"Map opened, but live sharing failed: {ex.Message}";
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadCirclesAsync()
+    {
+        if (_currentUser is null)
+        {
+            return;
+        }
+
+        var memberships = await Db.CircleMembers
+            .Where(cm => cm.UserId == _currentUser.Id)
+            .Include(cm => cm.Circle)
+            .ToListAsync();
+
+        var circleIds = memberships.Select(cm => cm.CircleId).ToList();
+
+        var memberCounts = await Db.CircleMembers
+            .Where(cm => circleIds.Contains(cm.CircleId))
+            .GroupBy(cm => cm.CircleId)
+            .Select(g => new
+            {
+                CircleId = g.Key,
+                Count = g.Count()
+            })
+            .ToDictionaryAsync(x => x.CircleId, x => x.Count);
+
+        _circles = memberships
+            .Select(cm => new CircleSummary(
+                cm.Circle.Id,
+                cm.Circle.Name,
+                cm.Circle.InviteCode,
+                memberCounts.GetValueOrDefault(cm.CircleId, 0)))
+            .OrderBy(c => c.Name)
+            .ToList();
+    }
+
+    private async Task LoadActiveMembersAsync()
+    {
+        _members.Clear();
+
+        if (_activeCircle is null)
+        {
+            return;
+        }
+
+        var memberUserIds = await Db.CircleMembers
+            .Where(cm => cm.CircleId == _activeCircle.Id)
+            .OrderBy(cm => cm.JoinedAt)
+            .Select(cm => cm.UserId)
+            .ToListAsync();
+
+        if (memberUserIds.Count == 0)
+        {
+            return;
+        }
+
+        var users = await Db.Users
+            .Where(u => memberUserIds.Contains(u.Id))
+            .Select(u => new
+            {
+                u.Id,
+                u.DisplayName,
+                u.AvatarUrl,
+                u.Email
+            })
+            .ToDictionaryAsync(u => u.Id);
+
+        var latestLocations = (await Db.LocationLogs
+            .Where(l => l.CircleId == _activeCircle.Id && memberUserIds.Contains(l.UserId))
+            .OrderByDescending(l => l.Timestamp)
+            .ToListAsync())
+            .DistinctBy(l => l.UserId)
+            .ToDictionary(l => l.UserId);
+
+        _members = memberUserIds
+            .Where(users.ContainsKey)
+            .Select(userId =>
+            {
+                var user = users[userId];
+                latestLocations.TryGetValue(userId, out var location);
+
+                return MemberDetail.From(
+                    user.Id,
+                    string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email ?? "RideMate User" : user.DisplayName,
+                    NormalizeAvatar(user.AvatarUrl),
+                    location,
+                    LocationHub.IsUserOnline(user.Id));
+            })
+            .OrderByDescending(m => m.UserId == _currentUser?.Id)
+            .ThenBy(m => m.DisplayName)
+            .ToList();
+    }
+
+    private async Task GenerateCreateCodeAsync()
+    {
+        _generatedInviteCode = await GenerateUniqueInviteCodeAsync();
+    }
+
+    private async Task CreateCircleFromPanelAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_generatedInviteCode))
+        {
+            await GenerateCreateCodeAsync();
+        }
+
+        await CreateCircleAsync(_newCircleName, _generatedInviteCode);
+        _generatedInviteCode = await GenerateUniqueInviteCodeAsync();
+        _sidebarMode = SidebarMode.Details;
+    }
+
+    private async Task CreateCircleAsync(string circleName, string inviteCode)
+    {
+        if (_currentUser is null)
+        {
+            return;
+        }
+
+        var name = string.IsNullOrWhiteSpace(circleName)
+            ? "Family"
+            : circleName.Trim();
+
+        var circle = new Circle
+        {
+            Name = name,
+            InviteCode = inviteCode,
+            CreatorId = _currentUser.Id
+        };
+
+        circle.Members.Add(new CircleMember
+        {
+            Circle = circle,
+            UserId = _currentUser.Id
+        });
+
+        Db.Circles.Add(circle);
+        await Db.SaveChangesAsync();
+
+        await LoadCirclesAsync();
+        await SelectCircleAsync(circle.Id);
+
+        _newCircleName = "Family";
+        _message = $"Created {name}. Share code {inviteCode}.";
+    }
+
+    private async Task JoinCircleAsync()
+    {
+        if (_currentUser is null || string.IsNullOrWhiteSpace(_joinCode))
+        {
+            _message = "Enter an invite code first.";
+            return;
+        }
+
+        var code = _joinCode.Trim().ToUpperInvariant();
+
+        var circle = await Db.Circles
+            .Include(c => c.Members)
+            .SingleOrDefaultAsync(c => c.InviteCode == code);
+
+        if (circle is null)
+        {
+            _message = "No circle found for that invite code.";
+            return;
+        }
+
+        if (!circle.Members.Any(m => m.UserId == _currentUser.Id))
+        {
+            circle.Members.Add(new CircleMember
+            {
+                CircleId = circle.Id,
+                UserId = _currentUser.Id
+            });
+
+            await Db.SaveChangesAsync();
+        }
+
+        _joinCode = "";
+        _message = $"Joined {circle.Name}.";
+
+        await LoadCirclesAsync();
+        await SelectCircleAsync(circle.Id);
+    }
+
+    private async Task SelectCircleAsync(Guid circleId, bool navigate = true)
+    {
+        _activeCircle = _circles.FirstOrDefault(c => c.Id == circleId);
+
+        if (_activeCircle is null)
+        {
+            return;
+        }
+
+        _editCircleName = _activeCircle.Name;
+        await LoadActiveMembersAsync();
+
+        if (_mapStarted)
+        {
+            _fitAfterCircleSwitch = true;
+            await JS.InvokeVoidAsync("clearRideMateMarkers");
+            await RenderMemberMarkersAsync();
+        }
+
+        if (_hubConnection?.State == HubConnectionState.Connected)
+        {
+            await JoinActiveHubGroupAsync();
+        }
+
+        if (_mapStarted)
+        {
+            await ApplyCurrentLocationToActiveCircleAsync();
+            await JS.InvokeVoidAsync("requestCurrentRideMateLocation");
+            await Task.Delay(150);
+            await JS.InvokeVoidAsync("fitAllRideMateMarkers");
+        }
+
+        if (navigate)
+        {
+            Nav.NavigateTo($"/map/{circleId}", replace: true);
+        }
+    }
+
+    private async Task RenameActiveCircleAsync()
+    {
+        if (_activeCircle is null || string.IsNullOrWhiteSpace(_editCircleName))
+        {
+            return;
+        }
+
+        var circle = await Db.Circles.SingleOrDefaultAsync(c => c.Id == _activeCircle.Id);
+
+        if (circle is null)
+        {
+            return;
+        }
+
+        circle.Name = _editCircleName.Trim();
+        await Db.SaveChangesAsync();
+
+        await LoadCirclesAsync();
+        _activeCircle = _circles.FirstOrDefault(c => c.Id == circle.Id);
+        _message = "Circle name updated.";
+    }
+
+    private async Task LeaveActiveCircleAsync()
+    {
+        if (_activeCircle is null || _currentUser is null)
+        {
+            return;
+        }
+
+        var circle = await Db.Circles
+            .Include(c => c.Members)
+            .SingleOrDefaultAsync(c => c.Id == _activeCircle.Id);
+
+        if (circle is null)
+        {
+            return;
+        }
+
+        if (circle.Members.Count <= 1)
+        {
+            Db.Circles.Remove(circle);
+            _message = $"{circle.Name} was removed because you were the only member.";
+        }
+        else
+        {
+            var membership = circle.Members.FirstOrDefault(m => m.UserId == _currentUser.Id);
+
+            if (membership is not null)
+            {
+                Db.CircleMembers.Remove(membership);
+            }
+
+            _message = $"You left {circle.Name}.";
+        }
+
+        var leftCircleId = circle.Id.ToString();
+        await Db.SaveChangesAsync();
+
+        await HubContext.Clients.Group(leftCircleId).SendAsync(
+            "MemberLeft",
+            _currentUser.Id,
+            leftCircleId);
+
+        if (_hubConnection?.State == HubConnectionState.Connected)
+        {
+            await _hubConnection.SendAsync("LeaveCircle", leftCircleId);
+        }
+
+        await LoadCirclesAsync();
+
+        _activeCircle = _circles.FirstOrDefault();
+        _editCircleName = _activeCircle?.Name ?? "";
+        await LoadActiveMembersAsync();
+
+        if (_mapStarted)
+        {
+            await JS.InvokeVoidAsync("clearRideMateMarkers");
+            await RenderMemberMarkersAsync();
+        }
+
+        Nav.NavigateTo(_activeCircle is null ? "/map" : $"/map/{_activeCircle.Id}", replace: true);
+    }
+
+    private async Task JoinActiveHubGroupAsync()
+    {
+        if (_hubConnection is null ||
+            _activeCircle is null ||
+            _hubConnection.State != HubConnectionState.Connected)
+        {
+            return;
+        }
+
+        var nextCircleId = _activeCircle.Id.ToString();
+
+        if (!string.IsNullOrWhiteSpace(_joinedHubCircleId) &&
+            _joinedHubCircleId != nextCircleId)
+        {
+            await _hubConnection.SendAsync("LeaveCircle", _joinedHubCircleId);
+        }
+
+        await _hubConnection.SendAsync("JoinCircle", nextCircleId);
+        _joinedHubCircleId = nextCircleId;
+    }
+
+    private async Task RenderMemberMarkersAsync()
+    {
+        foreach (var member in _members.Where(m => m.HasLocation))
+        {
+            await JS.InvokeVoidAsync(
+                "updateUserMarker",
+                member.UserId,
+                member.Latitude,
+                member.Longitude,
+                member.AvatarUrl,
+                member.DisplayName,
+                member.UserId == _currentUser?.Id,
+                member.IsOffline,
+                member.IsLocationPermissionDenied);
+        }
+    }
+
+    [JSInvokable]
+    public async Task UpdateUserPosition(double lat, double lng, int? batteryLevel)
+    {
+        if (_currentUser is null)
+        {
+            return;
+        }
+
+        _currentLat = lat;
+        _currentLng = lng;
+        _currentBatteryLevel = batteryLevel;
+        _hasCurrentLocation = true;
+        _currentLocationPermissionDenied = false;
+        _locationStatus = $"Sharing {lat:F5}, {lng:F5}";
+
+        UpsertMember(_currentUser.Id, DisplayName, AvatarUrl, lat, lng, DateTime.UtcNow, batteryLevel, false, false);
+
+        await JS.InvokeVoidAsync(
+            "updateUserMarker",
+            _currentUser.Id,
+            lat,
+            lng,
+            AvatarUrl,
+            DisplayName,
+            true,
+            false,
+            false);
+
+        if (_activeCircle is not null &&
+            _hubConnection?.State == HubConnectionState.Connected)
+        {
+            await _hubConnection.SendAsync(
+                "UpdateLocation",
+                _activeCircle.Id.ToString(),
+                lat,
+                lng,
+                batteryLevel);
+        }
+
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task ReportLocationError(string message, int? batteryLevel, bool isLocationPermissionDenied)
+    {
+        _currentBatteryLevel = batteryLevel;
+        _currentLocationPermissionDenied = isLocationPermissionDenied;
+        _locationStatus = message;
+
+        if (_currentUser is not null)
+        {
+            var existing = _members.FirstOrDefault(m => m.UserId == _currentUser.Id);
+            var lat = existing?.Latitude ?? DefaultLat;
+            var lng = existing?.Longitude ?? DefaultLng;
+
+            UpsertMember(
+                _currentUser.Id,
+                DisplayName,
+                AvatarUrl,
+                lat,
+                lng,
+                DateTime.UtcNow,
+                batteryLevel,
+                true,
+                isLocationPermissionDenied);
+
+            if (_mapStarted)
+            {
+                await JS.InvokeVoidAsync(
+                    "updateUserMarker",
+                    _currentUser.Id,
+                    lat,
+                    lng,
+                    AvatarUrl,
+                    DisplayName,
+                    true,
+                    true,
+                    isLocationPermissionDenied);
+            }
+
+            if (_activeCircle is not null &&
+                _hubConnection?.State == HubConnectionState.Connected)
+            {
+                await _hubConnection.SendAsync(
+                    "ReportLocationUnavailable",
+                    _activeCircle.Id.ToString(),
+                    batteryLevel,
+                    lat,
+                    lng,
+                    isLocationPermissionDenied);
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task ApplyCurrentLocationToActiveCircleAsync()
+    {
+        if (_currentUser is null ||
+            _activeCircle is null ||
+            !_hasCurrentLocation ||
+            _currentLat is null ||
+            _currentLng is null ||
+            _currentLocationPermissionDenied)
+        {
+            return;
+        }
+
+        UpsertMember(
+            _currentUser.Id,
+            DisplayName,
+            AvatarUrl,
+            _currentLat.Value,
+            _currentLng.Value,
+            DateTime.UtcNow,
+            _currentBatteryLevel,
+            false,
+            false);
+
+        await JS.InvokeVoidAsync(
+            "updateUserMarker",
+            _currentUser.Id,
+            _currentLat.Value,
+            _currentLng.Value,
+            AvatarUrl,
+            DisplayName,
+            true,
+            false,
+            false);
+
+        if (_hubConnection?.State == HubConnectionState.Connected)
+        {
+            await _hubConnection.SendAsync(
+                "UpdateLocation",
+                _activeCircle.Id.ToString(),
+                _currentLat.Value,
+                _currentLng.Value,
+                _currentBatteryLevel);
+        }
+
+        StateHasChanged();
+    }
+
+    private void UpsertMember(
+        string userId,
+        string displayName,
+        string avatarUrl,
+        double lat,
+        double lng,
+        DateTime timestamp,
+        int? batteryLevel,
+        bool isOffline,
+        bool isLocationPermissionDenied)
+    {
+        var existing = _members.FirstOrDefault(m => m.UserId == userId);
+
+        if (existing is null)
+        {
+            _members.Add(new MemberDetail
+            {
+                UserId = userId,
+                DisplayName = displayName,
+                AvatarUrl = NormalizeAvatar(avatarUrl),
+                Latitude = lat,
+                Longitude = lng,
+                BatteryLevel = batteryLevel,
+                LastSeen = timestamp,
+                IsOffline = isOffline,
+                IsLocationPermissionDenied = isLocationPermissionDenied,
+                HasLocation = true
+            });
+        }
+        else
+        {
+            existing.DisplayName = displayName;
+            existing.AvatarUrl = NormalizeAvatar(avatarUrl);
+            existing.Latitude = lat;
+            existing.Longitude = lng;
+            existing.BatteryLevel = batteryLevel;
+            existing.LastSeen = timestamp;
+            existing.IsOffline = isOffline;
+            existing.IsLocationPermissionDenied = isLocationPermissionDenied;
+            existing.HasLocation = true;
+        }
+
+        _members = _members
+            .OrderByDescending(m => m.UserId == _currentUser?.Id)
+            .ThenBy(m => m.DisplayName)
+            .ToList();
+    }
+
+    private async Task<string> GenerateUniqueInviteCodeAsync()
+    {
+        string code;
+
+        do
+        {
+            code = _inviteService.GenerateInviteCode();
+        }
+        while (await Db.Circles.AnyAsync(c => c.InviteCode == code));
+
+        return code;
+    }
+
+    private Guid? ResolveRequestedCircleId()
+    {
+        return Guid.TryParse(CircleId, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private void TogglePanel()
+    {
+        _panelPinned = !_panelPinned;
+    }
+
+    private void ToggleSettings()
+    {
+        _settingsOpen = !_settingsOpen;
+        _profileDisplayName = DisplayName;
+        _settingsMessage = null;
+    }
+
+    private void HandleAvatarSelected(InputFileChangeEventArgs args)
+    {
+        _selectedAvatar = args.File;
+        _settingsMessage = $"{_selectedAvatar.Name} selected.";
+    }
+
+    private async Task SaveProfileAsync()
+    {
+        if (_currentUser is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_profileDisplayName))
+        {
+            _settingsMessage = "Name cannot be empty.";
+            return;
+        }
+
+        _currentUser.DisplayName = _profileDisplayName.Trim();
+        var oldAvatarUrl = _currentUser.AvatarUrl;
+        string? newAvatarUrl = null;
+
+        if (_selectedAvatar is not null)
+        {
+            newAvatarUrl = await SaveAvatarAsync(_selectedAvatar);
+
+            if (newAvatarUrl is null)
+            {
+                return;
+            }
+
+            _currentUser.AvatarUrl = newAvatarUrl;
+            _selectedAvatar = null;
+        }
+
+        var result = await UserManager.UpdateAsync(_currentUser);
+
+        if (!result.Succeeded)
+        {
+            DeleteLocalAvatarFile(newAvatarUrl);
+            _currentUser.AvatarUrl = oldAvatarUrl;
+            _settingsMessage = result.Errors.FirstOrDefault()?.Description ?? "Profile update failed.";
+            return;
+        }
+
+        if (newAvatarUrl is not null)
+        {
+            DeleteLocalAvatarFile(oldAvatarUrl);
+        }
+
+        UpsertMember(
+            _currentUser.Id,
+            DisplayName,
+            AvatarUrl,
+            _members.FirstOrDefault(m => m.UserId == _currentUser.Id)?.Latitude ?? DefaultLat,
+            _members.FirstOrDefault(m => m.UserId == _currentUser.Id)?.Longitude ?? DefaultLng,
+            DateTime.UtcNow,
+            _members.FirstOrDefault(m => m.UserId == _currentUser.Id)?.BatteryLevel,
+            _members.FirstOrDefault(m => m.UserId == _currentUser.Id)?.IsOffline ?? true,
+            _members.FirstOrDefault(m => m.UserId == _currentUser.Id)?.IsLocationPermissionDenied ?? false);
+
+        await RenderMemberMarkersAsync();
+        _settingsMessage = "Profile updated.";
+    }
+
+    private async Task<string?> SaveAvatarAsync(IBrowserFile file)
+    {
+        var allowedTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["image/jpeg"] = ".jpg",
+            ["image/png"] = ".png",
+            ["image/webp"] = ".webp",
+            ["image/gif"] = ".gif"
+        };
+
+        if (!allowedTypes.TryGetValue(file.ContentType, out var extension))
+        {
+            _settingsMessage = "Photo must be a JPG, PNG, WebP, or GIF.";
+            return null;
+        }
+
+        if (file.Size > 4 * 1024 * 1024)
+        {
+            _settingsMessage = "Photo must be under 4MB.";
+            return null;
+        }
+
+        var uploadsPath = Path.Combine(Env.WebRootPath, "uploads");
+        Directory.CreateDirectory(uploadsPath);
+
+        var fileName = $"{Guid.NewGuid():N}{extension}";
+        var filePath = Path.Combine(uploadsPath, fileName);
+
+        await using var input = file.OpenReadStream(4 * 1024 * 1024);
+        await using var output = File.Create(filePath);
+        await input.CopyToAsync(output);
+
+        return $"/uploads/{fileName}";
+    }
+
+    private async Task DeletePhotoAsync()
+    {
+        if (_currentUser is null)
+        {
+            return;
+        }
+
+        DeleteLocalAvatarFile(_currentUser.AvatarUrl);
+        _currentUser.AvatarUrl = null;
+        _selectedAvatar = null;
+
+        var result = await UserManager.UpdateAsync(_currentUser);
+        _settingsMessage = result.Succeeded
+            ? "Profile photo deleted."
+            : result.Errors.FirstOrDefault()?.Description ?? "Photo delete failed.";
+
+        if (result.Succeeded)
+        {
+            var me = _members.FirstOrDefault(m => m.UserId == _currentUser.Id);
+
+            UpsertMember(
+                _currentUser.Id,
+                DisplayName,
+                AvatarUrl,
+                me?.Latitude ?? DefaultLat,
+                me?.Longitude ?? DefaultLng,
+                me?.LastSeen ?? DateTime.UtcNow,
+                me?.BatteryLevel,
+                me?.IsOffline ?? true,
+                me?.IsLocationPermissionDenied ?? false);
+
+            await RenderMemberMarkersAsync();
+        }
+    }
+
+    private void DeleteLocalAvatarFile(string? avatarUrl)
+    {
+        if (string.IsNullOrWhiteSpace(avatarUrl) ||
+            !avatarUrl.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var fileName = Path.GetFileName(avatarUrl);
+        var path = Path.Combine(Env.WebRootPath, "uploads", fileName);
+
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
+
+    private async Task AllowLocationAsync()
+    {
+        _settingsMessage = "Requesting location permission...";
+        await JS.InvokeVoidAsync("requestRideMateLocationPermission");
+    }
+
+    private async Task PauseLocationAsync()
+    {
+        _settingsMessage = "Location sharing paused.";
+        await JS.InvokeVoidAsync("stopRideMateLocationTracking");
+    }
+
+    private async Task FocusMemberAsync(MemberDetail member)
+    {
+        if (!member.HasLocation)
+        {
+            _message = $"{member.DisplayName} has no shared location yet.";
+            return;
+        }
+
+        await JS.InvokeVoidAsync("focusRideMateMarker", member.UserId);
+        _panelPinned = false;
+    }
+
+    private void OpenCreatePanel()
+    {
+        _sidebarMode = SidebarMode.Create;
+        _panelPinned = true;
+    }
+
+    private void ShowDetailsPanel()
+    {
+        _sidebarMode = SidebarMode.Details;
+    }
+
+    private string DisplayName =>
+        string.IsNullOrWhiteSpace(_currentUser?.DisplayName)
+            ? "Me"
+            : _currentUser.DisplayName;
+
+    private string AvatarUrl => NormalizeAvatar(_currentUser?.AvatarUrl);
+
+    private static string NormalizeAvatar(string? avatarUrl)
+    {
+        return string.IsNullOrWhiteSpace(avatarUrl) ? "/favicon.png" : avatarUrl;
+    }
+
+    private async Task ShowAllMarkers()
+    {
+        await JS.InvokeVoidAsync("fitAllRideMateMarkers");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _objRef?.Dispose();
+
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+
+    private enum SidebarMode
+    {
+        Details,
+        Create
+    }
+
+    private sealed record CircleSummary(
+        Guid Id,
+        string Name,
+        string InviteCode,
+        int MemberCount);
+
+    private sealed class MemberDetail
+    {
+        public string UserId { get; set; } = "";
+        public string DisplayName { get; set; } = "RideMate User";
+        public string AvatarUrl { get; set; } = "/favicon.png";
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+        public int? BatteryLevel { get; set; }
+        public DateTime? LastSeen { get; set; }
+        public bool IsOffline { get; set; } = true;
+        public bool IsLocationPermissionDenied { get; set; }
+        public bool HasLocation { get; set; }
+
+        public string BatteryText => BatteryLevel is null ? "Battery not shared" : $"{BatteryLevel}%";
+
+        public string LastSeenText
+        {
+            get
+            {
+                if (LastSeen is null)
+                {
+                    return "No ping";
+                }
+
+                var elapsed = DateTime.UtcNow - LastSeen.Value.ToUniversalTime();
+
+                if (elapsed.TotalSeconds < 45)
+                {
+                    return "Now";
+                }
+
+                if (elapsed.TotalMinutes < 60)
+                {
+                    return $"{Math.Max(1, (int)elapsed.TotalMinutes)}m ago";
+                }
+
+                return $"{Math.Max(1, (int)elapsed.TotalHours)}h ago";
+            }
+        }
+
+        public string StatusText
+        {
+            get
+            {
+                if (IsLocationPermissionDenied)
+                {
+                    return "Location permission denied";
+                }
+
+                if (!HasLocation)
+                {
+                    return "No location shared yet";
+                }
+
+                return IsOffline ? "Offline - last known location" : "Live on map";
+            }
+        }
+
+        public static MemberDetail From(string userId, string displayName, string avatarUrl, LocationLog? location, bool isOnline)
+        {
+            var isOffline = location is null ||
+                location.IsLocationPermissionDenied ||
+                !isOnline;
+
+            return new MemberDetail
+            {
+                UserId = userId,
+                DisplayName = displayName,
+                AvatarUrl = avatarUrl,
+                Latitude = location?.Latitude ?? 0,
+                Longitude = location?.Longitude ?? 0,
+                BatteryLevel = location?.BatteryLevel,
+                LastSeen = location?.Timestamp,
+                IsOffline = isOffline,
+                IsLocationPermissionDenied = location?.IsLocationPermissionDenied ?? false,
+                HasLocation = location is not null
+            };
+        }
+    }
+}

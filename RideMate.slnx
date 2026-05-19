@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RideMate.Application/RideMate.Application.csproj" />
+    <Project Path="src/RideMate.Domain/RideMate.Domain.csproj" />
+    <Project Path="src/RideMate.Infrastructure/RideMate.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RideMate.Tests/RideMate.Tests.csproj" />
+  </Folder>
+</Solution>

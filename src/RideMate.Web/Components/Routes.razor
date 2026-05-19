@@ -1,0 +1,22 @@
+﻿@namespace RideMate.Web.Components
+@using RideMate.Web.Components.Shared
+
+<Router AppAssembly="@typeof(Program).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+            <NotAuthorized>
+                <RedirectToLogin />
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <div class="flex flex-col items-center justify-center min-h-[60vh] text-center p-10">
+                <h1 class="text-6xl font-black text-slate-200 mb-4">404</h1>
+                <p class="text-xl text-slate-500 font-medium mb-8">This part of the map doesn't exist yet.</p>
+                <a href="/register" class="bg-blue-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all">Back to Safety</a>
+            </div>
+        </LayoutView>
+    </NotFound>
+</Router>

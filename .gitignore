@@ -1,0 +1,25 @@
+# Build output
+bin/
+obj/
+
+# User-specific and OS files
+.DS_Store
+*.user
+*.suo
+.vs/
+.vscode/
+
+# Runtime user uploads
+src/RideMate.Web/wwwroot/uploads/
+src/RideMate.Web/wwwroot/Uploads/
+
+# Node dependencies
+node_modules/
+src/RideMate.Web/node_modules/
+
+# Local environment and secrets
+src/RideMate.Web/appsettings.Local.json
+src/RideMate.Web/appsettings.Development.json
+src/RideMate.Web/appsettings.Production.json
+appsettings.Local.json
+*.Development.local.json

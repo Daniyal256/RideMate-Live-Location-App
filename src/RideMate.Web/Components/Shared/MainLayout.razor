@@ -1,0 +1,230 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Nav
+
+<style>
+    .rm-shell {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        background:
+            radial-gradient(circle at 10% 0%, rgba(37, 99, 235, .08), transparent 28%),
+            linear-gradient(180deg, #f8fafc, #eef2ff 55%, #f8fafc);
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .rm-nav {
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+        border-bottom: 1px solid rgba(226, 232, 240, .72);
+        background: rgba(255, 255, 255, .78);
+        box-shadow: 0 18px 46px rgba(15, 23, 42, .08);
+        backdrop-filter: blur(18px);
+    }
+
+    .rm-nav-inner {
+        max-width: 1280px;
+        margin: 0 auto;
+        min-height: 76px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: .75rem 1rem;
+    }
+
+    .rm-brand {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: .8rem;
+        min-width: max-content;
+        overflow: hidden;
+        padding: .55rem .8rem .55rem .6rem;
+        color: #0f172a;
+        text-decoration: none;
+        border: 1px solid rgba(226, 232, 240, .74);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, .72);
+        box-shadow: 0 14px 32px rgba(15, 23, 42, .09);
+        transition: transform .18s ease, box-shadow .18s ease;
+    }
+
+    .rm-brand::before {
+        content: "";
+        position: absolute;
+        inset: auto -18% -115% -18%;
+        height: 125%;
+        border-radius: 48%;
+        background: linear-gradient(90deg, rgba(37, 99, 235, .18), rgba(20, 184, 166, .2), rgba(244, 114, 182, .14));
+        transition: transform .45s ease;
+    }
+
+    .rm-brand:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 20px 42px rgba(15, 23, 42, .13);
+    }
+
+    .rm-brand:hover::before {
+        transform: translateY(-62%);
+    }
+
+    .rm-brand-icon {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        place-items: center;
+        width: 2.65rem;
+        height: 2.65rem;
+        color: white;
+        border-radius: 999px;
+        background:
+            radial-gradient(circle at 35% 30%, #ffffff 0 13%, transparent 14%),
+            linear-gradient(135deg, #2563eb, #14b8a6);
+        box-shadow: 0 14px 26px rgba(37, 99, 235, .28);
+        font-weight: 950;
+    }
+
+    .rm-brand-text {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        line-height: 1.05;
+    }
+
+    .rm-brand-text strong {
+        font-size: 1.18rem;
+        font-weight: 950;
+        letter-spacing: 0;
+    }
+
+    .rm-brand-text small {
+        margin-top: .18rem;
+        color: #64748b;
+        font-size: .72rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0;
+    }
+
+    .rm-links {
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+        padding: .35rem;
+        border: 1px solid rgba(226, 232, 240, .72);
+        border-radius: 999px;
+        background: rgba(241, 245, 249, .82);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7);
+    }
+
+    .rm-link {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 2.55rem;
+        min-width: 5.8rem;
+        overflow: hidden;
+        padding: .65rem 1rem;
+        color: #475569;
+        text-decoration: none;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        background: transparent;
+        font-size: .9rem;
+        font-weight: 950;
+        line-height: 1;
+        transition: transform .18s ease, color .18s ease, box-shadow .18s ease, background .18s ease;
+    }
+
+    .rm-link::before {
+        content: "";
+        position: absolute;
+        inset: auto -18% -125% -18%;
+        height: 125%;
+        border-radius: 48%;
+        background: linear-gradient(90deg, rgba(37, 99, 235, .16), rgba(20, 184, 166, .18));
+        transition: transform .38s ease;
+    }
+
+    .rm-link:hover,
+    .rm-link.active {
+        color: #0f172a;
+        background: rgba(255, 255, 255, .88);
+        box-shadow: 0 12px 26px rgba(15, 23, 42, .1);
+        transform: translateY(-1px);
+    }
+
+    .rm-link:hover::before {
+        transform: translateY(-65%);
+    }
+
+    .rm-link span {
+        position: relative;
+        z-index: 1;
+    }
+
+    .rm-logout {
+        cursor: pointer;
+        border: 1px solid transparent;
+    }
+
+    .rm-main {
+        flex: 1;
+    }
+
+    @@media (max-width: 720px) {
+        .rm-nav-inner {
+            align-items: stretch;
+            flex-direction: column;
+            min-height: auto;
+        }
+
+        .rm-links {
+            width: 100%;
+            overflow-x: auto;
+            justify-content: flex-start;
+            border-radius: 22px;
+        }
+
+        .rm-link {
+            min-width: max-content;
+        }
+    }
+</style>
+
+<div class="rm-shell">
+    <nav class="rm-nav">
+        <div class="rm-nav-inner">
+            <a class="rm-brand" href="/map">
+                <span class="rm-brand-icon">R</span>
+                <span class="rm-brand-text">
+                    <strong>RideMate</strong>
+                    <small>Live family circles</small>
+                </span>
+            </a>
+
+            <div class="rm-links">
+                <NavLink href="/register" class="rm-link" ActiveClass="active" Match="NavLinkMatch.All">
+                    <span>Join Now</span>
+                </NavLink>
+                <NavLink href="/map" class="rm-link" ActiveClass="active">
+                    <span>Live Map</span>
+                </NavLink>
+                <NavLink href="/login" class="rm-link" ActiveClass="active" Match="NavLinkMatch.All">
+                    <span>Login</span>
+                </NavLink>
+                <form method="post" action="/auth/logout" class="m-0">
+                    <button type="submit" class="rm-link rm-logout">
+                        <span>Logout</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </nav>
+
+    <main class="rm-main">
+        @Body
+    </main>
+</div>
